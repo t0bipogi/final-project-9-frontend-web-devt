@@ -1,0 +1,67 @@
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../AuthContext.jsx";
+import { errMsg } from "../api.js";
+import Field from "../components/Field.jsx";
+import { isEmail } from "../validate.js";
+
+export default function Register() {
+  const { register, login } = useAuth();
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const errs = {};
+    if (form.name.trim().length < 2) errs.name = "Enter your name.";
+    if (!isEmail(form.email)) errs.email = "Enter a valid email address.";
+    if (form.password.length < 6) errs.password = "Use at least 6 characters.";
+    if (form.confirm !== form.password) errs.confirm = "Passwords don't match.";
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
+
+    setBusy(true);
+    setServerError("");
+    try {
+      const data = await register(form.name.trim(), form.email, form.password);
+      if (!data.token) await login(form.email, form.password);
+      navigate("/contacts");
+    } catch (err) {
+      setServerError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="auth">
+      <form className="auth-card" onSubmit={submit} noValidate>
+        <Link to="/" className="back-link">Back to home</Link>
+        <h1>Create account</h1>
+        <p className="muted">Start your personal address book.</p>
+        {serverError && <div className="alert">{serverError}</div>}
+        <Field label="Name" error={errors.name}>
+          <input value={form.name} onChange={set("name")} autoComplete="name" autoFocus />
+        </Field>
+        <Field label="Email" error={errors.email}>
+          <input type="email" value={form.email} onChange={set("email")} autoComplete="email" />
+        </Field>
+        <Field label="Password" error={errors.password}>
+          <input type="password" value={form.password} onChange={set("password")} autoComplete="new-password" />
+        </Field>
+        <Field label="Confirm password" error={errors.confirm}>
+          <input type="password" value={form.confirm} onChange={set("confirm")} autoComplete="new-password" />
+        </Field>
+        <button className="btn" disabled={busy}>{busy ? "Creating…" : "Create account"}</button>
+        <p className="muted center">
+          Already registered? <Link to="/login">Sign in</Link>
+        </p>
+      </form>
+    </div>
+  );
+}

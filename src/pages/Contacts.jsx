@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Copy, Download, Search, Star, Users, X } from "lucide-react";
+import { Camera, Copy, Crop, Download, Search, Star, Users, X } from "lucide-react";
 import api, { errMsg, idOf } from "../api.js";
 import Modal from "../components/Modal.jsx";
 import Confirm from "../components/Confirm.jsx";
@@ -8,7 +8,8 @@ import Avatar from "../components/Avatar.jsx";
 import Tag from "../components/Tag.jsx";
 import { useToast } from "../ToastContext.jsx";
 import { useDebounce } from "../hooks.js";
-import { fileToAvatar } from "../image.js";
+import { checkImageFile } from "../image.js";
+import PhotoCropper from "../components/PhotoCropper.jsx";
 import { downloadContactsCsv } from "../csv.js";
 import { isEmail, isPhone } from "../validate.js";
 
@@ -57,6 +58,7 @@ export default function Contacts() {
   const [onlyFav, setOnlyFav] = useState(false);
   const [editing, setEditing] = useState(null); // null | "new" | contact
   const [removing, setRemoving] = useState(null);
+  const toast = useToast();
 
   const load = async () => {
     try {
@@ -105,6 +107,7 @@ export default function Contacts() {
     try {
       await api.delete(`/contacts/${idOf(removing)}`);
       setContacts((list) => list.filter((x) => idOf(x) !== idOf(removing)));
+      toast({ title: "Contact deleted", text: `${removing.name} was removed.` });
     } catch (e) {
       setError(errMsg(e));
     }
@@ -116,6 +119,10 @@ export default function Contacts() {
       isNew ? [saved, ...list] : list.map((x) => (idOf(x) === idOf(saved) ? saved : x))
     );
     setEditing(null);
+    toast({
+      title: isNew ? "Contact added" : "Contact updated",
+      text: isNew ? `${saved.name} is now in your address book.` : `${saved.name} was saved.`,
+    });
   };
 
   return (
@@ -258,22 +265,25 @@ function ContactForm({ contact, categories, onClose, onSaved }) {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [photoError, setPhotoError] = useState("");
+  const [cropSrc, setCropSrc] = useState(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  const pickPhoto = async (e) => {
+  const pickPhoto = (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    try {
-      const data = await fileToAvatar(file);
-      setForm((f) => ({ ...f, photo: data }));
-      setPhotoError("");
-    } catch (err) {
-      setPhotoError(err.message);
-    }
+    const problem = checkImageFile(file);
+    if (problem) return setPhotoError(problem);
+    setPhotoError("");
+    setCropSrc(URL.createObjectURL(file));
+  };
+
+  const closeCropper = () => {
+    if (cropSrc?.startsWith("blob:")) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
   };
 
   const submit = async (e) => {
@@ -309,73 +319,91 @@ function ContactForm({ contact, categories, onClose, onSaved }) {
     }
   };
 
+  const title = cropSrc ? "Adjust photo" : isNew ? "New contact" : "Edit contact";
+
   return (
-    <Modal title={isNew ? "New contact" : "Edit contact"} onClose={onClose}>
-      <form onSubmit={submit} noValidate>
-        {serverError && <div className="alert">{serverError}</div>}
+    <Modal title={title} onClose={cropSrc ? closeCropper : onClose}>
+      {cropSrc ? (
+        <PhotoCropper
+          src={cropSrc}
+          onCancel={closeCropper}
+          onDone={(data) => {
+            setForm((f) => ({ ...f, photo: data }));
+            closeCropper();
+          }}
+        />
+      ) : (
+        <form onSubmit={submit} noValidate>
+          {serverError && <div className="alert">{serverError}</div>}
 
-        <div className="photo-pick">
-          <Avatar name={form.name} photo={form.photo} size={64} />
-          <div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              hidden
-              onChange={pickPhoto}
-            />
-            <div className="photo-actions">
-              <button type="button" className="btn-ghost btn-sm" onClick={() => fileRef.current.click()}>
-                <Camera size={14} /> {form.photo ? "Change photo" : "Add photo"}
-              </button>
-              {form.photo && (
-                <button type="button" className="btn-text" onClick={() => setForm({ ...form, photo: "" })}>
-                  Remove
+          <div className="photo-pick">
+            <Avatar name={form.name} photo={form.photo} size={64} />
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                hidden
+                onChange={pickPhoto}
+              />
+              <div className="photo-actions">
+                <button type="button" className="btn-ghost btn-sm" onClick={() => fileRef.current.click()}>
+                  <Camera size={14} /> {form.photo ? "Change photo" : "Add photo"}
                 </button>
-              )}
+                {form.photo && (
+                  <>
+                    <button type="button" className="btn-ghost btn-sm" onClick={() => setCropSrc(form.photo)}>
+                      <Crop size={14} /> Adjust
+                    </button>
+                    <button type="button" className="btn-text" onClick={() => setForm({ ...form, photo: "" })}>
+                      Remove
+                    </button>
+                  </>
+                )}
+              </div>
+              {photoError && <span className="field-error">{photoError}</span>}
             </div>
-            {photoError && <span className="field-error">{photoError}</span>}
           </div>
-        </div>
 
-        <Field label="Name" error={errors.name}>
-          <input value={form.name} onChange={set("name")} autoFocus />
-        </Field>
-        <div className="two-col">
-          <Field label="Phone" error={errors.phone}>
-            <input value={form.phone} onChange={set("phone")} inputMode="tel" />
+          <Field label="Name" error={errors.name}>
+            <input value={form.name} onChange={set("name")} autoFocus />
           </Field>
-          <Field label="Email" error={errors.email}>
-            <input type="email" value={form.email} onChange={set("email")} />
+          <div className="two-col">
+            <Field label="Phone" error={errors.phone}>
+              <input value={form.phone} onChange={set("phone")} inputMode="tel" />
+            </Field>
+            <Field label="Email" error={errors.email}>
+              <input type="email" value={form.email} onChange={set("email")} />
+            </Field>
+          </div>
+          <Field label="Category">
+            <select value={form.category} onChange={set("category")}>
+              <option value="">None</option>
+              {categories.map((k) => (
+                <option key={idOf(k)} value={idOf(k)}>{k.name}</option>
+              ))}
+            </select>
           </Field>
-        </div>
-        <Field label="Category">
-          <select value={form.category} onChange={set("category")}>
-            <option value="">None</option>
-            {categories.map((k) => (
-              <option key={idOf(k)} value={idOf(k)}>{k.name}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Address">
-          <input value={form.address} onChange={set("address")} />
-        </Field>
-        <Field label="Notes">
-          <textarea rows="3" value={form.notes} onChange={set("notes")} />
-        </Field>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={form.isFavorite}
-            onChange={(e) => setForm({ ...form, isFavorite: e.target.checked })}
-          />
-          Mark as favorite
-        </label>
-        <div className="actions">
-          <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" disabled={busy}>{busy ? "Saving…" : "Save contact"}</button>
-        </div>
-      </form>
+          <Field label="Address">
+            <input value={form.address} onChange={set("address")} />
+          </Field>
+          <Field label="Notes">
+            <textarea rows="3" value={form.notes} onChange={set("notes")} />
+          </Field>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={form.isFavorite}
+              onChange={(e) => setForm({ ...form, isFavorite: e.target.checked })}
+            />
+            Mark as favorite
+          </label>
+          <div className="actions">
+            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn" disabled={busy}>{busy ? "Saving…" : "Save contact"}</button>
+          </div>
+        </form>
+      )}
     </Modal>
   );
 }

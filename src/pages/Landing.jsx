@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Search, Star, Tag as TagIcon } from "lucide-react";
+import { Search, Star, Tag as TagIcon, Users } from "lucide-react";
 import Avatar from "../components/Avatar.jsx";
 import Tag from "../components/Tag.jsx";
 import { pastel } from "../colors.js";
@@ -34,7 +34,9 @@ export default function Landing() {
     <div className="landing">
       <header className="land-bar">
         <div className="land-inner land-bar-inner">
-          <span className="brand">Contacts</span>
+          <span className="brand">
+            <span className="brand-mark"><Users size={16} /></span>Contacts
+          </span>
           <nav className="land-actions">
             <Link to="/login" className="land-signin">Sign in</Link>
             <Link to="/register" className="btn">Create account</Link>

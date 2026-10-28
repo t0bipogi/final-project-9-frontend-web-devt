@@ -1,4 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Users } from "lucide-react";
 import { useAuth } from "../AuthContext.jsx";
 
 export default function Layout() {
@@ -14,7 +15,9 @@ export default function Layout() {
     <>
       <header className="topbar">
         <div className="topbar-inner">
-          <Link to="/contacts" className="brand">Contacts</Link>
+          <Link to="/contacts" className="brand">
+            <span className="brand-mark"><Users size={16} /></span>Contacts
+          </Link>
           <nav className="nav">
             <NavLink to="/contacts">My contacts</NavLink>
             {user.role === "admin" && (

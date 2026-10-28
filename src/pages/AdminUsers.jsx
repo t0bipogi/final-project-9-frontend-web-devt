@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api, { errMsg, idOf } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Modal from "../components/Modal.jsx";
+import Confirm from "../components/Confirm.jsx";
 import Field from "../components/Field.jsx";
 import { isEmail } from "../validate.js";
 
@@ -11,7 +12,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(null);
-  const [removing, setRemoving] = useState(null);
+  const [confirm, setConfirm] = useState(null); // { type: "deactivate" | "delete", user }
 
   useEffect(() => {
     api.get("/users")
@@ -22,25 +23,25 @@ export default function AdminUsers() {
 
   const replace = (u) => setUsers((list) => list.map((x) => (idOf(x) === idOf(u) ? { ...x, ...u } : x)));
 
-  // Assumes the User model also carries an `isActive` flag (default true).
-  const toggleActive = async (u) => {
-    const next = u.isActive === false;
+  // Assumes the User model carries an `isActive` flag (default true).
+  const setActive = async (u, active) => {
+    setError("");
     try {
-      const { data } = await api.put(`/users/${idOf(u)}`, { isActive: next });
-      replace({ ...u, ...data, isActive: next });
+      const { data } = await api.put(`/users/${idOf(u)}`, { isActive: active });
+      replace({ ...u, ...data, isActive: active });
     } catch (e) {
       setError(errMsg(e));
     }
   };
 
-  const remove = async () => {
+  const remove = async (u) => {
+    setError("");
     try {
-      await api.delete(`/users/${idOf(removing)}`);
-      setUsers((list) => list.filter((x) => idOf(x) !== idOf(removing)));
+      await api.delete(`/users/${idOf(u)}`);
+      setUsers((list) => list.filter((x) => idOf(x) !== idOf(u)));
     } catch (e) {
       setError(errMsg(e));
     }
-    setRemoving(null);
   };
 
   return (
@@ -63,18 +64,30 @@ export default function AdminUsers() {
                   <tr key={idOf(u)} className={inactive ? "dim" : ""}>
                     <td>{u.name}</td>
                     <td>{u.email}</td>
-                    <td>{u.role}</td>
-                    <td>{inactive ? "Deactivated" : "Active"}</td>
+                    <td><span className={"pill pill-" + u.role}>{u.role}</span></td>
+                    <td>
+                      <span className={"pill " + (inactive ? "pill-off" : "pill-active")}>
+                        {inactive ? "Deactivated" : "Active"}
+                      </span>
+                    </td>
                     <td className="cell-actions">
-                      <button className="btn-text" onClick={() => setEditing(u)}>Edit</button>
-                      {!self && (
-                        <>
-                          <button className="btn-text" onClick={() => toggleActive(u)}>
-                            {inactive ? "Activate" : "Deactivate"}
-                          </button>
-                          <button className="btn-text danger" onClick={() => setRemoving(u)}>Delete</button>
-                        </>
-                      )}
+                      <div className="cell-actions-inner">
+                        <button className="btn-text" onClick={() => setEditing(u)}>Edit</button>
+                        {!self && (
+                          <>
+                            {inactive ? (
+                              <button className="btn-text act-green" onClick={() => setActive(u, true)}>Activate</button>
+                            ) : (
+                              <button className="btn-text act-amber" onClick={() => setConfirm({ type: "deactivate", user: u })}>
+                                Deactivate
+                              </button>
+                            )}
+                            <button className="btn-text act-red" onClick={() => setConfirm({ type: "delete", user: u })}>
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -92,14 +105,27 @@ export default function AdminUsers() {
         />
       )}
 
-      {removing && (
-        <Modal title="Delete user" onClose={() => setRemoving(null)}>
-          <p>Delete <strong>{removing.name}</strong> and their account? This can't be undone.</p>
-          <div className="actions">
-            <button className="btn-ghost" onClick={() => setRemoving(null)}>Cancel</button>
-            <button className="btn btn-danger" onClick={remove}>Delete user</button>
-          </div>
-        </Modal>
+      {confirm?.type === "deactivate" && (
+        <Confirm
+          title="Deactivate user"
+          tone="warn"
+          confirmLabel="Deactivate user"
+          onConfirm={async () => { await setActive(confirm.user, false); setConfirm(null); }}
+          onClose={() => setConfirm(null)}
+        >
+          Deactivate <strong>{confirm.user.name}</strong>? They won't be able to sign in until you activate them again.
+        </Confirm>
+      )}
+
+      {confirm?.type === "delete" && (
+        <Confirm
+          title="Delete user"
+          confirmLabel="Delete user"
+          onConfirm={async () => { await remove(confirm.user); setConfirm(null); }}
+          onClose={() => setConfirm(null)}
+        >
+          Delete <strong>{confirm.user.name}</strong> and all of their contacts? This can't be undone.
+        </Confirm>
       )}
     </>
   );

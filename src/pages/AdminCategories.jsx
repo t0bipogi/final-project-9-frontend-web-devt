@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import api, { errMsg, idOf } from "../api.js";
-import Modal from "../components/Modal.jsx";
+import Confirm from "../components/Confirm.jsx";
+
+const countLabel = (n) => `${n} contact${n === 1 ? "" : "s"}`;
 
 export default function AdminCategories() {
   const [items, setItems] = useState([]);
@@ -27,7 +29,7 @@ export default function AdminCategories() {
     setError("");
     try {
       const { data } = await api.post("/categories", { name: value });
-      setItems([...items, data]);
+      setItems([...items, { ...data, contactCount: 0 }]);
       setName("");
     } catch (err) {
       setError(errMsg(err));
@@ -37,6 +39,8 @@ export default function AdminCategories() {
   const saveEdit = async (c) => {
     const value = editName.trim();
     if (!value) return setError("Enter a category name.");
+    if (items.some((i) => idOf(i) !== idOf(c) && i.name.toLowerCase() === value.toLowerCase()))
+      return setError("That category already exists.");
     setError("");
     try {
       const { data } = await api.put(`/categories/${idOf(c)}`, { name: value });
@@ -45,6 +49,15 @@ export default function AdminCategories() {
     } catch (err) {
       setError(errMsg(err));
     }
+  };
+
+  const askDelete = (c) => {
+    if (c.contactCount > 0) {
+      setError(`"${c.name}" is used by ${countLabel(c.contactCount)}. Move or delete those contacts before deleting the category.`);
+      return;
+    }
+    setError("");
+    setRemoving(c);
   };
 
   const remove = async () => {
@@ -77,7 +90,7 @@ export default function AdminCategories() {
       {loading ? (
         <p className="muted">Loading…</p>
       ) : items.length === 0 ? (
-        <div className="empty"><p>No categories yet. Add one above so users can organize contacts.</p></div>
+        <div className="empty-box"><p className="empty-title">No categories yet</p><p className="muted">Add one above so users can organize contacts.</p></div>
       ) : (
         <ul className="list">
           {items.map((c) => (
@@ -88,18 +101,24 @@ export default function AdminCategories() {
                     className="grow"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && saveEdit(c)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEdit(c);
+                      if (e.key === "Escape") setEditId(null);
+                    }}
                     autoFocus
                     aria-label="Category name"
                   />
-                  <button className="btn-text" onClick={() => saveEdit(c)}>Save</button>
-                  <button className="btn-text" onClick={() => setEditId(null)}>Cancel</button>
+                  <button className="btn btn-sm" onClick={() => saveEdit(c)}>Save</button>
+                  <button className="btn-ghost btn-sm" onClick={() => { setEditId(null); setError(""); }}>Cancel</button>
                 </>
               ) : (
                 <>
-                  <div className="row-main"><div className="row-name">{c.name}</div></div>
-                  <button className="btn-text" onClick={() => { setEditId(idOf(c)); setEditName(c.name); }}>Rename</button>
-                  <button className="btn-text danger" onClick={() => setRemoving(c)}>Delete</button>
+                  <div className="row-main">
+                    <span className="row-name">{c.name}</span>
+                    <span className="count">{countLabel(c.contactCount ?? 0)}</span>
+                  </div>
+                  <button className="btn-text" onClick={() => { setEditId(idOf(c)); setEditName(c.name); setError(""); }}>Rename</button>
+                  <button className="btn-text act-red" onClick={() => askDelete(c)}>Delete</button>
                 </>
               )}
             </li>
@@ -108,13 +127,14 @@ export default function AdminCategories() {
       )}
 
       {removing && (
-        <Modal title="Delete category" onClose={() => setRemoving(null)}>
-          <p>Delete <strong>{removing.name}</strong>? Categories that still have contacts can't be deleted.</p>
-          <div className="actions">
-            <button className="btn-ghost" onClick={() => setRemoving(null)}>Cancel</button>
-            <button className="btn btn-danger" onClick={remove}>Delete category</button>
-          </div>
-        </Modal>
+        <Confirm
+          title="Delete category"
+          confirmLabel="Delete category"
+          onConfirm={remove}
+          onClose={() => setRemoving(null)}
+        >
+          Delete <strong>{removing.name}</strong>? Contacts can no longer be assigned to it.
+        </Confirm>
       )}
     </>
   );

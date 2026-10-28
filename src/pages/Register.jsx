@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { useAuth } from "../AuthContext.jsx";
 import { errMsg } from "../api.js";
 import Field from "../components/Field.jsx";
+import PasswordInput from "../components/PasswordInput.jsx";
 import { isEmail } from "../validate.js";
 
 export default function Register() {
@@ -41,7 +43,7 @@ export default function Register() {
   return (
     <div className="auth">
       <form className="auth-card" onSubmit={submit} noValidate>
-        <Link to="/" className="back-link">Back to home</Link>
+        <Link to="/" className="back-link"><ArrowLeft size={14} /> Back to home</Link>
         <h1>Create account</h1>
         <p className="muted">Start your personal address book.</p>
         {serverError && <div className="alert">{serverError}</div>}
@@ -52,10 +54,10 @@ export default function Register() {
           <input type="email" value={form.email} onChange={set("email")} autoComplete="email" />
         </Field>
         <Field label="Password" error={errors.password}>
-          <input type="password" value={form.password} onChange={set("password")} autoComplete="new-password" />
+          <PasswordInput value={form.password} onChange={set("password")} autoComplete="new-password" />
         </Field>
         <Field label="Confirm password" error={errors.confirm}>
-          <input type="password" value={form.confirm} onChange={set("confirm")} autoComplete="new-password" />
+          <PasswordInput value={form.confirm} onChange={set("confirm")} autoComplete="new-password" />
         </Field>
         <button className="btn" disabled={busy}>{busy ? "Creating…" : "Create account"}</button>
         <p className="muted center">

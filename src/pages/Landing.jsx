@@ -1,4 +1,8 @@
 import { Link } from "react-router-dom";
+import { Search, Star, Tag as TagIcon } from "lucide-react";
+import Avatar from "../components/Avatar.jsx";
+import Tag from "../components/Tag.jsx";
+import { pastel } from "../colors.js";
 
 const SAMPLE = [
   { name: "Amara Okafor", sub: "+63 917 555 0142  ·  amara@example.com", tag: "Family", fav: true },
@@ -9,16 +13,19 @@ const SAMPLE = [
 
 const FEATURES = [
   {
+    icon: Search,
     title: "Find anyone as you type",
     text: "Search by name, phone, or email and the list narrows instantly.",
   },
   {
+    icon: TagIcon,
     title: "Sort with categories",
     text: "Group contacts as Family, Friends, Work, or anything your admin sets up, then filter in one click.",
   },
   {
-    title: "Keep favorites on top",
-    text: "Star the people you reach most so they are always first in your list.",
+    icon: Star,
+    title: "Keep favorites close",
+    text: "Star the people you reach most, then show only them with one click.",
   },
 ];
 
@@ -54,12 +61,12 @@ export default function Landing() {
             <ul className="list preview-list">
               {SAMPLE.map((c) => (
                 <li key={c.name} className="row">
-                  <div className="avatar">{c.name[0]}</div>
+                  <Avatar name={c.name} />
                   <div className="row-main">
                     <div className="row-name">{c.name}</div>
                     <div className="row-sub">{c.sub}</div>
                   </div>
-                  <span className="tag">{c.tag}</span>
+                  <Tag name={c.tag} />
                   <span className={"preview-star" + (c.fav ? " fav-on" : "")}>{c.fav ? "★" : "☆"}</span>
                 </li>
               ))}
@@ -68,10 +75,13 @@ export default function Landing() {
         </section>
 
         <section className="land-inner features">
-          {FEATURES.map((f) => (
-            <div key={f.title} className="feature">
-              <h2>{f.title}</h2>
-              <p className="muted">{f.text}</p>
+          {FEATURES.map(({ icon: Icon, title, text }) => (
+            <div key={title} className="feature">
+              <div className="feature-icon" style={pastel(title)}>
+                <Icon size={20} strokeWidth={2} />
+              </div>
+              <h2>{title}</h2>
+              <p className="muted">{text}</p>
             </div>
           ))}
         </section>

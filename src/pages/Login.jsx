@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { useAuth } from "../AuthContext.jsx";
 import { errMsg } from "../api.js";
 import Field from "../components/Field.jsx";
+import PasswordInput from "../components/PasswordInput.jsx";
 import { isEmail } from "../validate.js";
 
 export default function Login() {
@@ -38,7 +40,7 @@ export default function Login() {
   return (
     <div className="auth">
       <form className="auth-card" onSubmit={submit} noValidate>
-        <Link to="/" className="back-link">Back to home</Link>
+        <Link to="/" className="back-link"><ArrowLeft size={14} /> Back to home</Link>
         <h1>Sign in</h1>
         <p className="muted">Open your address book.</p>
         {serverError && <div className="alert">{serverError}</div>}
@@ -46,7 +48,7 @@ export default function Login() {
           <input type="email" value={form.email} onChange={set("email")} autoComplete="email" autoFocus />
         </Field>
         <Field label="Password" error={errors.password}>
-          <input type="password" value={form.password} onChange={set("password")} autoComplete="current-password" />
+          <PasswordInput value={form.password} onChange={set("password")} autoComplete="current-password" />
         </Field>
         <button className="btn" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
         <p className="muted center">

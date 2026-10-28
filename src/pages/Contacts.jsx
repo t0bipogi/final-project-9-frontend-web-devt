@@ -1,21 +1,59 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Camera, Copy, Download, Search, Star, Users, X } from "lucide-react";
 import api, { errMsg, idOf } from "../api.js";
 import Modal from "../components/Modal.jsx";
+import Confirm from "../components/Confirm.jsx";
 import Field from "../components/Field.jsx";
+import Avatar from "../components/Avatar.jsx";
+import Tag from "../components/Tag.jsx";
+import { useToast } from "../ToastContext.jsx";
+import { useDebounce } from "../hooks.js";
+import { fileToAvatar } from "../image.js";
+import { downloadContactsCsv } from "../csv.js";
 import { isEmail, isPhone } from "../validate.js";
 
-const EMPTY = { name: "", phone: "", email: "", address: "", category: "", notes: "", isFavorite: false };
+const EMPTY = { name: "", phone: "", email: "", address: "", category: "", notes: "", isFavorite: false, photo: "" };
 
 // The backend may return `category` as an id or as a populated object.
 const catId = (c) => (c && typeof c === "object" ? idOf(c) : c) || "";
+
+const SORTERS = {
+  az: (a, b) => a.name.localeCompare(b.name),
+  za: (a, b) => b.name.localeCompare(a.name),
+  newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+};
+
+function CopyButton({ text, label }) {
+  const toast = useToast();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const t = document.createElement("textarea");
+      t.value = text;
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand("copy");
+      t.remove();
+    }
+    toast("Copied to clipboard!");
+  };
+  return (
+    <button className="copy-btn" onClick={copy} aria-label={`Copy ${label}`} title="Copy">
+      <Copy size={14} />
+    </button>
+  );
+}
 
 export default function Contacts() {
   const [contacts, setContacts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const search = useDebounce(query, 300);
   const [filter, setFilter] = useState("");
+  const [sort, setSort] = useState("az");
   const [onlyFav, setOnlyFav] = useState(false);
   const [editing, setEditing] = useState(null); // null | "new" | contact
   const [removing, setRemoving] = useState(null);
@@ -44,11 +82,13 @@ export default function Contacts() {
       .filter((c) => !onlyFav || c.isFavorite)
       .filter((c) => !filter || catId(c.category) === filter)
       .filter((c) =>
-        !q ||
-        [c.name, c.email, c.phone, catName(c.category)].some((v) => v?.toLowerCase().includes(q))
+        !q || [c.name, c.email, c.phone, catName(c.category)].some((v) => v?.toLowerCase().includes(q))
       )
-      .sort((a, b) => Number(b.isFavorite) - Number(a.isFavorite) || a.name.localeCompare(b.name));
-  }, [contacts, search, filter, onlyFav, categories]);
+      .sort(SORTERS[sort]);
+  }, [contacts, search, filter, sort, onlyFav, categories]);
+
+  const hasFilters = !!(query || filter || onlyFav);
+  const clearFilters = () => { setQuery(""); setFilter(""); setOnlyFav(false); };
 
   const toggleFav = async (c) => {
     const next = !c.isFavorite;
@@ -65,11 +105,10 @@ export default function Contacts() {
     try {
       await api.delete(`/contacts/${idOf(removing)}`);
       setContacts((list) => list.filter((x) => idOf(x) !== idOf(removing)));
-      setRemoving(null);
     } catch (e) {
       setError(errMsg(e));
-      setRemoving(null);
     }
+    setRemoving(null);
   };
 
   const onSaved = (saved, isNew) => {
@@ -87,25 +126,45 @@ export default function Contacts() {
       </div>
 
       <div className="toolbar">
-        <input
-          type="search"
-          placeholder="Search name, phone, email"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search contacts"
-        />
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter by category">
+        <div className="search">
+          <input
+            type="text"
+            placeholder="Search name, phone, email"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search contacts"
+          />
+          {query && (
+            <button className="search-clear" onClick={() => setQuery("")} aria-label="Clear search">
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        <select className="select-auto" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter by category">
           <option value="">All categories</option>
           {categories.map((k) => (
             <option key={idOf(k)} value={idOf(k)}>{k.name}</option>
           ))}
+        </select>
+        <select className="select-auto" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort contacts">
+          <option value="az">Name A–Z</option>
+          <option value="za">Name Z–A</option>
+          <option value="newest">Recently added</option>
         </select>
         <button
           className={"chip" + (onlyFav ? " chip-on" : "")}
           onClick={() => setOnlyFav(!onlyFav)}
           aria-pressed={onlyFav}
         >
-          Favorites
+          <Star size={14} fill={onlyFav ? "currentColor" : "none"} /> Favorites
+        </button>
+        <button
+          className="btn-ghost btn-sm export"
+          onClick={() => downloadContactsCsv(visible, (c) => catName(c))}
+          disabled={visible.length === 0}
+          title="Download the contacts shown below as a CSV file"
+        >
+          <Download size={14} /> Export CSV
         </button>
       </div>
 
@@ -114,26 +173,45 @@ export default function Contacts() {
       {loading ? (
         <p className="muted">Loading…</p>
       ) : visible.length === 0 ? (
-        <div className="empty">
+        <div className="empty-box">
+          <div className="empty-icon">{contacts.length === 0 ? <Users size={26} /> : <Search size={26} />}</div>
           {contacts.length === 0 ? (
             <>
-              <p>Your address book is empty.</p>
+              <p className="empty-title">Your address book is empty</p>
+              <p className="muted">Add your first contact to get started.</p>
               <button className="btn" onClick={() => setEditing("new")}>Add your first contact</button>
             </>
           ) : (
-            <p>No contacts match your search.</p>
+            <>
+              <p className="empty-title">No contacts match</p>
+              <p className="muted">Try a different search or remove a filter.</p>
+              {hasFilters && <button className="btn-ghost" onClick={clearFilters}>Clear filters</button>}
+            </>
           )}
         </div>
       ) : (
         <ul className="list">
           {visible.map((c) => (
             <li key={idOf(c)} className="row">
-              <div className="avatar" aria-hidden="true">{c.name?.[0]?.toUpperCase()}</div>
+              <Avatar name={c.name} photo={c.photo} />
               <div className="row-main">
                 <div className="row-name">{c.name}</div>
-                <div className="row-sub">{[c.phone, c.email].filter(Boolean).join("  ·  ")}</div>
+                <div className="row-sub">
+                  {c.phone && (
+                    <span className="contact-item">
+                      <a href={`tel:${c.phone.replace(/[^\d+]/g, "")}`}>{c.phone}</a>
+                      <CopyButton text={c.phone} label="phone number" />
+                    </span>
+                  )}
+                  {c.email && (
+                    <span className="contact-item">
+                      <a href={`mailto:${c.email}`}>{c.email}</a>
+                      <CopyButton text={c.email} label="email address" />
+                    </span>
+                  )}
+                </div>
               </div>
-              {catName(c.category) && <span className="tag">{catName(c.category)}</span>}
+              {catName(c.category) && <Tag name={catName(c.category)} />}
               <button
                 className={"icon-btn" + (c.isFavorite ? " fav-on" : "")}
                 onClick={() => toggleFav(c)}
@@ -143,7 +221,7 @@ export default function Contacts() {
                 {c.isFavorite ? "★" : "☆"}
               </button>
               <button className="btn-text" onClick={() => setEditing(c)}>Edit</button>
-              <button className="btn-text danger" onClick={() => setRemoving(c)}>Delete</button>
+              <button className="btn-text" onClick={() => setRemoving(c)}>Delete</button>
             </li>
           ))}
         </ul>
@@ -159,13 +237,14 @@ export default function Contacts() {
       )}
 
       {removing && (
-        <Modal title="Delete contact" onClose={() => setRemoving(null)}>
-          <p>Delete <strong>{removing.name}</strong> from your address book? This can't be undone.</p>
-          <div className="actions">
-            <button className="btn-ghost" onClick={() => setRemoving(null)}>Cancel</button>
-            <button className="btn btn-danger" onClick={remove}>Delete contact</button>
-          </div>
-        </Modal>
+        <Confirm
+          title="Delete contact"
+          confirmLabel="Delete contact"
+          onConfirm={remove}
+          onClose={() => setRemoving(null)}
+        >
+          Delete <strong>{removing.name}</strong> from your address book? This can't be undone.
+        </Confirm>
       )}
     </>
   );
@@ -174,13 +253,28 @@ export default function Contacts() {
 function ContactForm({ contact, categories, onClose, onSaved }) {
   const isNew = !contact;
   const [form, setForm] = useState(
-    isNew ? EMPTY : { ...EMPTY, ...contact, category: catId(contact.category) }
+    isNew ? EMPTY : { ...EMPTY, ...contact, category: catId(contact.category), photo: contact.photo || "" }
   );
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
+  const [photoError, setPhotoError] = useState("");
   const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const pickPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const data = await fileToAvatar(file);
+      setForm((f) => ({ ...f, photo: data }));
+      setPhotoError("");
+    } catch (err) {
+      setPhotoError(err.message);
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -202,6 +296,7 @@ function ContactForm({ contact, categories, onClose, onSaved }) {
       notes: form.notes.trim(),
       isFavorite: !!form.isFavorite,
       category: form.category || null,
+      photo: form.photo || "",
     };
     try {
       const { data } = isNew
@@ -218,6 +313,31 @@ function ContactForm({ contact, categories, onClose, onSaved }) {
     <Modal title={isNew ? "New contact" : "Edit contact"} onClose={onClose}>
       <form onSubmit={submit} noValidate>
         {serverError && <div className="alert">{serverError}</div>}
+
+        <div className="photo-pick">
+          <Avatar name={form.name} photo={form.photo} size={64} />
+          <div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              hidden
+              onChange={pickPhoto}
+            />
+            <div className="photo-actions">
+              <button type="button" className="btn-ghost btn-sm" onClick={() => fileRef.current.click()}>
+                <Camera size={14} /> {form.photo ? "Change photo" : "Add photo"}
+              </button>
+              {form.photo && (
+                <button type="button" className="btn-text" onClick={() => setForm({ ...form, photo: "" })}>
+                  Remove
+                </button>
+              )}
+            </div>
+            {photoError && <span className="field-error">{photoError}</span>}
+          </div>
+        </div>
+
         <Field label="Name" error={errors.name}>
           <input value={form.name} onChange={set("name")} autoFocus />
         </Field>
